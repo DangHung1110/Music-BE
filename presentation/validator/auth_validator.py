@@ -39,3 +39,33 @@ class RegisterRequest(BaseModel):
         if not re.match(r'^[a-zA-Z0-9\s\u00C0-\u017F\u1EA0-\u1EF9]+$', v):
             raise ValueError('Full name contains invalid characters')
         return v
+        
+class LoginRequest(BaseModel):
+    email: EmailStr = Field(..., description="User email address")
+    password: str = Field(..., min_length=6, max_length=100, description="User password")
+
+    @validator("password")
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError("Password must be at least 6 characters")
+        if len(v) > 100:
+            raise ValueError("Password must be less than 100 characters")
+        return v
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=6, max_length=100, description="Current password")
+    new_password: str = Field(..., min_length=6, max_length=100, description="New password")
+    confirm_password: str = Field(..., min_length=6, max_length=100, description="Confirm new password")
+
+    @validator("new_password")
+    def validate_new_password(cls, v):
+        if not re.search(r"^(?=.*[a-zA-Z])(?=.*\d)", v):
+            raise ValueError("New password must contain at least one letter and one number")
+        return v
+
+    @validator("confirm_password")
+    def passwords_match(cls, v, values):
+        if "new_password" in values and v != values["new_password"]:
+            raise ValueError("Password confirmation does not match new password")
+        return v

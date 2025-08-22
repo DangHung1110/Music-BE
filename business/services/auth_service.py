@@ -6,8 +6,7 @@ from passlib.context import CryptContext
 from typing import Dict, Any
 from shared.exceptions import AuthFailureError, ConflictRequestError, NotFoundError
 from data.repositories.user_repository import UserRepository
-from infrastructure.external.email_service import EmailService
-
+from infrastructure.external.email_servive import EmailService
 
 class AuthService:
     def __init__(self):
@@ -67,6 +66,7 @@ class AuthService:
             "email": email,
             "password": hashed_password,
             "full_name": full_name,
+            "role": "user",
             "is_active": True
         }
 

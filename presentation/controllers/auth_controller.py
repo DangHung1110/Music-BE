@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from shared.decorators import async_handler
 from shared.responses import OK, CREATED
 from business.services.auth_service import AuthService
-from presentation.validators.auth_validator import RegisterRequest, LoginRequest, ChangePasswordRequest
+from presentation.validator.auth_validator import RegisterRequest, LoginRequest, ChangePasswordRequest
 from presentation.middleware.auth_middleware import get_current_user
 from datetime import datetime
 

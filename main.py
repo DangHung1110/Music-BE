@@ -1,10 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import os
+from dotenv import load_dotenv
 
-# Import your routers here
-# from presentation.controllers.auth_controller import router as auth_router
-# from presentation.controllers.music_controller import router as music_router
+# Load environment variables
+load_dotenv()
+
+# Import auth router
+from presentation.controllers.auth_controller import router as auth_router
 
 app = FastAPI(
     title="Music Streaming API",
@@ -23,9 +27,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-# app.include_router(auth_router, prefix="/api/v1", tags=["Authentication"])
-# app.include_router(music_router, prefix="/api/v1", tags=["Music"])
+# Include auth router
+app.include_router(auth_router, prefix="/api/v1", tags=["Authentication"])
 
 @app.get("/")
 async def root():
@@ -44,7 +47,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=int(os.getenv("PORT", "8000")),
         reload=True,
         log_level="info"
     )
