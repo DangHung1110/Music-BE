@@ -2,17 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from shared.decorators import async_handler
 from shared.responses import OK, CREATED
 from business.services.auth_service import AuthService
-from presentation.validator.auth_validator import RegisterRequest, LoginRequest, ChangePasswordRequest
+from presentation.validator.auth_validator import RegisterRequest, LoginRequest, ForgotPasswordRequest, ResetPasswordRequest
 from presentation.middleware.auth_middleware import get_current_user
 from datetime import datetime
+from infrastructure.config.database import get_db, AsyncSession
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 auth_service = AuthService()
 
 @router.post("/register")
 @async_handler
-async def register(request: RegisterRequest):
+async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
     result = await auth_service.register_user(
+        db=db,
         username=request.username,
         email=request.email,
         password=request.password,
@@ -22,8 +24,9 @@ async def register(request: RegisterRequest):
 
 @router.post("/login")
 @async_handler
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await auth_service.login_user(
+        db=db,
         email=request.email,
         password=request.password
     )
@@ -31,8 +34,8 @@ async def login(request: LoginRequest):
 
 @router.get("/profile")
 @async_handler
-async def get_profile(current_user: dict = Depends(get_current_user)):
-    user_info = await auth_service.get_user_by_token(current_user)
+async def get_profile(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    user_info = await auth_service.get_user_by_token(db, current_user)
     return OK(message="Profile retrieved successfully", metadata={"user": user_info}).send()
 
 @router.post("/refresh")
@@ -53,20 +56,21 @@ async def refresh_token(current_user: dict = Depends(get_current_user)):
         }
     ).send()
 
-@router.post("/change-password")
+@router.post("/forgot-password")
 @async_handler
-async def change_password(request: ChangePasswordRequest, current_user: dict = Depends(get_current_user)):
-    user = await auth_service.user_repo.get_by_id(current_user["user_id"])
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if not auth_service.verify_password(request.current_password, user.password):
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
-    new_hashed_password = auth_service.hash_password(request.new_password)
-    await auth_service.user_repo.update(user.id, {
-        "password": new_hashed_password,
-        "updated_at": datetime.utcnow()
-    })
-    return OK(message="Password changed successfully", metadata={}).send()
+async def forgot_password(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    result = await auth_service.forgot_password(db, request.email)
+    return OK(message="If the email exists, a reset link has been sent", metadata=result).send()
+
+@router.post("/reset-password")
+@async_handler
+async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    result = await auth_service.reset_password(
+        db=db,
+        reset_token=request.reset_token,
+        new_password=request.new_password
+    )
+    return OK(message="Password reset successfully", metadata=result).send()
 
 @router.post("/logout")
 @async_handler

@@ -1,13 +1,17 @@
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, Text
 from sqlalchemy.sql import func
+from datetime import datetime
 from . import Base
 
 class BaseMixin:
     def to_dict(self):
-        return {
-            c.name: getattr(self, c.name)
-            for c in self.__table__.columns
-        }
+        result = {}
+        for c in self.__table__.columns:
+            value = getattr(self, c.name)
+            if isinstance(value, datetime):
+                value = value.isoformat()  # hoặc value.strftime("%Y-%m-%d %H:%M:%S")
+            result[c.name] = value
+        return result
 
 class User(Base, BaseMixin):
     __tablename__ = "users"
