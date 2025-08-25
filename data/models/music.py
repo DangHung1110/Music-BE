@@ -30,7 +30,7 @@ class Song(Base):
     duration = Column(Integer, nullable=True)  # seconds
     file_url = Column(String(255), nullable=False)
     cover_url = Column(String(255), nullable=True)
-
+    jamendo_id = Column(String(50), unique=True, nullable=True)  # thêm cột mới
     artist_id = Column(Integer, ForeignKey("artists.id"))
     album_id = Column(Integer, ForeignKey("albums.id"))
 

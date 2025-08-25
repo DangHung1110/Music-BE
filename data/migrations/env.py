@@ -23,7 +23,7 @@ from data.models.interaction import Like, Comment
 # access to the values within the .ini file in use.
 config = context.config
 
-db_url = os.getenv('DATABASE_URL', config.get_main_option('sqlalchemy.url'))
+db_url = os.getenv('DATABASE_URL1', config.get_main_option('sqlalchemy.url'))
 config.set_main_option('sqlalchemy.url', db_url)
 
 # Interpret the config file for Python logging.
