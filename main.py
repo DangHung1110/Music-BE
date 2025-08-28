@@ -10,7 +10,7 @@ load_dotenv()
 # Import auth router
 from presentation.controllers.auth_controller import router as auth_router
 from presentation.controllers.music_controller import router as music_router
-
+from presentation.controllers.playlists_contrroller import router as playlist_router
 app = FastAPI(
     title="Music Streaming API",
     description="A modern music streaming backend built with FastAPI",
@@ -31,6 +31,7 @@ app.add_middleware(
 # Include auth router
 app.include_router(auth_router, prefix="/api/v1", tags=["Authentication"])
 app.include_router(music_router,tags=["Music"])
+app.include_router(playlist_router,tags=["Playlist"])
 @app.get("/")
 async def root():
     return {
