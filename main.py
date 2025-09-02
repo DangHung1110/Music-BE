@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 from dotenv import load_dotenv
+from presentation.middleware.error_middlewar--e import ErrorHandlerMiddleware
 
 # Load environment variables
 load_dotenv()
@@ -19,6 +20,8 @@ app = FastAPI(
     redoc_url="/redoc"       # ReDoc
 )
 
+app.add_middleware(ErrorHandlerMiddleware)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -30,7 +33,7 @@ app.add_middleware(
 
 # Include auth router
 app.include_router(auth_router, prefix="/api/v1", tags=["Authentication"])
-app.include_router(music_router,tags=["Music"])
+app.include_router(music_router,prefix="/api/v1", tags=["Music"])
 @app.get("/")
 async def root():
     return {
@@ -39,11 +42,6 @@ async def root():
         "docs": "/docs",
         "redoc": "/redoc"
     }
-
-@app.get("/api/v1/health")
-async def health_check():
-    return {"status": "healthy", "message": "Service is up and running"}
-
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",

@@ -27,6 +27,12 @@ class UserRepository:
         )
         return result.scalars().first()
 
+    async def get_all_users(self) -> List[User]:
+        result = await self.db.execute(
+            select(User).where(User.is_active == True)
+        )
+        return result.scalars().all()
+
     async def create(self, user_data: Dict[str, Any]) -> User:
         user = User(
             username=user_data["username"],
