@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from shared.decorators import async_handler
 from shared.responses import OK, CREATED
 from business.services.auth_service import AuthService
@@ -6,6 +6,7 @@ from presentation.validator.auth_validator import RegisterRequest, LoginRequest,
 from presentation.middleware.auth_middleware import get_current_user
 from datetime import datetime
 from infrastructure.config.database import get_db, AsyncSession
+from typing import Optional
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 auth_service = AuthService()
@@ -44,7 +45,8 @@ async def refresh_token(current_user: dict = Depends(get_current_user)):
     token_payload = {
         "user_id": current_user["user_id"],
         "email": current_user["email"],
-        "username": current_user["username"]
+        "username": current_user["username"],
+        "role": current_user.get("role", "user")
     }
     new_token = auth_service.create_access_token(token_payload)
     return OK(
@@ -55,6 +57,41 @@ async def refresh_token(current_user: dict = Depends(get_current_user)):
             "expires_in": auth_service.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
     ).send()
+
+@router.post("/logout")
+@async_handler
+async def logout(
+    current_user: dict = Depends(get_current_user),
+    authorization: str = Header(None),
+    session_id: Optional[str] = Header(None, alias="X-Session-ID")
+):
+    # Extract token from authorization header
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+    
+    if not token:
+        raise HTTPException(status_code=400, detail="Token not found in request")
+    
+    result = await auth_service.logout_user(token, session_id)
+    return OK(message="Logout successful", metadata=result).send()
+
+@router.post("/logout-all")
+@async_handler
+async def logout_all_devices(
+    current_user: dict = Depends(get_current_user),
+    authorization: str = Header(None)
+):
+    # Extract token from authorization header
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+    
+    if not token:
+        raise HTTPException(status_code=400, detail="Token not found in request")
+    
+    result = await auth_service.logout_all_devices(current_user["user_id"], token)
+    return OK(message="Logged out from all devices", metadata=result).send()
 
 @router.post("/forgot-password")
 @async_handler
@@ -71,11 +108,3 @@ async def reset_password(request: ResetPasswordRequest, db: AsyncSession = Depen
         new_password=request.new_password
     )
     return OK(message="Password reset successfully", metadata=result).send()
-
-@router.post("/logout")
-@async_handler
-async def logout(current_user: dict = Depends(get_current_user)):
-    return OK(
-        message="Logout successful",
-        metadata={"message": "Please remove token from client storage"}
-    ).send()

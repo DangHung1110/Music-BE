@@ -4,8 +4,8 @@ import uvicorn
 import os
 from dotenv import load_dotenv
 from presentation.middleware.error_middleware import ErrorHandlerMiddleware
+from infrastructure.config.redis import close_redis, get_redis
 
-# Load environment variables
 load_dotenv()
 
 # Import auth router
@@ -33,8 +33,19 @@ app.add_middleware(
 
 # Include auth router
 app.include_router(auth_router, prefix="/api/v1", tags=["Authentication"])
-app.include_router(music_router,tags=["Music"])
-app.include_router(playlist_router,tags=["Playlist"])
+app.include_router(music_router,prefix="/api/v1", tags=["Music"])
+app.include_router(playlist_router, prefix="/api/v1", tags=["Playlist"])
+
+# Add Redis startup/shutdown events
+@app.on_event("startup")
+async def startup_event():
+    await get_redis()
+    print("Redis connection established")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await close_redis()
+    print("Redis connection closed")
 @app.get("/")
 async def root():
     return {

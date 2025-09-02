@@ -8,11 +8,13 @@ from shared.exceptions import AuthFailureError, ConflictRequestError, NotFoundEr
 from data.repositories.user_repository import UserRepository
 from infrastructure.external.email_servive import EmailService
 from infrastructure.config.database import AsyncSession
+from infrastructure.cache.redis_service import RedisService
 
 class AuthService:
     def __init__(self):
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         self.email_service = EmailService()
+        self.redis_service = RedisService()
         self.SECRET_KEY = os.getenv("JWT_SECRET", "your-fallback-secret-key")
         self.ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
         self.ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
@@ -53,12 +55,18 @@ class AuthService:
     async def register_user(self, db: AsyncSession, username: str, email: str, password: str, full_name: str = None) -> Dict[str, Any]:
         user_repo = UserRepository(db)
         
+        # Check login attempts (prevent spam registration)
+        if await self.redis_service.is_login_locked(email):
+            raise AuthFailureError("Too many attempts. Please try again later.")
+        
         existing_user = await user_repo.get_by_email(email)
         if existing_user:
+            await self.redis_service.track_login_attempt(email, success=False)
             raise ConflictRequestError("Email already registered")
 
         existing_username = await user_repo.get_by_username(username)
         if existing_username:
+            await self.redis_service.track_login_attempt(email, success=False)
             raise ConflictRequestError("Username already taken")
 
         hashed_password = self.hash_password(password)
@@ -73,35 +81,98 @@ class AuthService:
         }
 
         user = await user_repo.create(user_data)
+        user_dict = user.to_dict()
 
-        token_payload = {"user_id": user.id, "email": user.email, "username": user.username}
+        token_payload = {"user_id": user.id, "email": user.email, "username": user.username, "role": user.role}
         access_token = self.create_access_token(token_payload)
 
+        # Create Redis session
+        session_id = await self.redis_service.create_session(user_dict, access_token)
+        
+        # Cache user data
+        await self.redis_service.cache_user_data(user.id, user_dict)
+        
+        # Track successful registration
+        await self.redis_service.track_login_attempt(email, success=True)
+
         return {
-            "user": user.to_dict(),
+            "user": user_dict,
             "access_token": access_token,
+            "session_id": session_id,
             "token_type": "bearer",
             "expires_in": self.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
 
     async def login_user(self, db: AsyncSession, email: str, password: str) -> Dict[str, Any]:
+        # Check if login is locked due to too many attempts
+        if await self.redis_service.is_login_locked(email):
+            raise AuthFailureError("Account temporarily locked due to too many failed attempts. Please try again later.")
+        
         user_repo = UserRepository(db)
         user = await user_repo.get_by_email(email)
         
         if not user or not self.verify_password(password, user.password):
+            await self.redis_service.track_login_attempt(email, success=False)
             raise AuthFailureError("Invalid email or password")
+        
         if not user.is_active:
+            await self.redis_service.track_login_attempt(email, success=False)
             raise AuthFailureError("Account has been deactivated")
 
-        token_payload = {"user_id": user.id, "email": user.email, "username": user.username}
+        user_dict = user.to_dict()
+        token_payload = {"user_id": user.id, "email": user.email, "username": user.username, "role": user.role}
         access_token = self.create_access_token(token_payload)
 
+        # Create Redis session
+        session_id = await self.redis_service.create_session(user_dict, access_token)
+        
+        # Cache user data
+        await self.redis_service.cache_user_data(user.id, user_dict)
+        
+        # Track successful login
+        await self.redis_service.track_login_attempt(email, success=True)
+
         return {
-            "user": user.to_dict(),
+            "user": user_dict,
             "access_token": access_token,
+            "session_id": session_id,
             "token_type": "bearer",
             "expires_in": self.ACCESS_TOKEN_EXPIRE_MINUTES * 60
         }
+
+    async def logout_user(self, token: str, session_id: str = None) -> Dict[str, Any]:
+        # Blacklist the token
+        await self.redis_service.blacklist_token(token)
+        
+        # Delete session if provided
+        if session_id:
+            await self.redis_service.delete_session(session_id)
+        
+        return {"message": "Logged out successfully"}
+
+    async def logout_all_devices(self, user_id: int, current_token: str) -> Dict[str, Any]:
+        # Blacklist current token
+        await self.redis_service.blacklist_token(current_token)
+        
+        # Delete all user sessions
+        deleted_count = await self.redis_service.delete_all_user_sessions(user_id)
+        
+        # Invalidate user cache
+        await self.redis_service.invalidate_user_cache(user_id)
+        
+        return {
+            "message": f"Logged out from {deleted_count} devices successfully"
+        }
+
+    async def verify_session_token(self, token: str) -> Dict[str, Any]:
+        """Verify token and check if it's blacklisted"""
+        # Check if token is blacklisted
+        if await self.redis_service.is_token_blacklisted(token):
+            raise AuthFailureError("Token has been revoked")
+        
+        # Verify token structure
+        payload = self.verify_token(token)
+        return payload
 
     async def forgot_password(self, db: AsyncSession, email: str) -> Dict[str, Any]:
         user_repo = UserRepository(db)
@@ -140,6 +211,9 @@ class AuthService:
             hashed_password = self.hash_password(new_password)
             await user_repo.update(user.id, {"password": hashed_password, "reset_token": None, "reset_expiration": None})
 
+            # Logout from all devices after password reset
+            await self.logout_all_devices(user_id, "")
+
             try:
                 await self.email_service.send_password_changed_notification(user.email, user.full_name or user.username)
             except Exception as e:
@@ -157,9 +231,20 @@ class AuthService:
         if not user_id:
             raise AuthFailureError("Invalid token payload")
 
+        # Try to get from cache first
+        cached_user = await self.redis_service.get_cached_user_data(user_id)
+        if cached_user:
+            return cached_user
+
+        # Get from database if not cached
         user_repo = UserRepository(db)
         user = await user_repo.get_by_id(user_id)
         if not user:
             raise NotFoundError("User not found")
 
-        return user.to_dict()
+        user_dict = user.to_dict()
+        
+        # Cache the user data
+        await self.redis_service.cache_user_data(user_id, user_dict)
+        
+        return user_dict
