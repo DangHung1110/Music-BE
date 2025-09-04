@@ -1,5 +1,4 @@
 version: '3.8'
-
 services:
   app:
     build: .
@@ -10,27 +9,32 @@ services:
       - redis
     environment:
       - PORT=8000
-      - DATABASE_NAME=music-db
+      - DATABASE_NAME=music_be
       - DATABASE_USER=root
       - DATABASE_PASSWORD=391351
-      - REDIS_URL=redis://redis:6379/0
-      - MONGO_URL=mongodb+srv://nhathuy2409:J6hL0v74TreUI6EZ@cluster0.zsxqi.mongodb.net/OAuth
+      - DATABASE_URL=mysql+aiomysql://root:391351@mysql:3306/music_be
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - .:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   mysql:
     image: mysql:8.0
+    container_name: mysql_music
+    restart: always
     environment:
-      - MYSQL_DATABASE=music-db
       - MYSQL_ROOT_PASSWORD=391351
+      - MYSQL_DATABASE=music_be  
       - MYSQL_CHARSET=utf8mb4
       - MYSQL_COLLATION=utf8mb4_unicode_ci
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
+
 
   redis:
     image: redis:7-alpine
